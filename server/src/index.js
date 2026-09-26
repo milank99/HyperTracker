@@ -10,6 +10,7 @@ import issuesRouter from './routes/issues.js';
 import commentsRouter from './routes/comments.js';
 import teamRouter from './routes/team.js';
 import backupRouter from './routes/backup.js';
+import notesRouter from './routes/notes.js';
 import { runSeed } from './db/seed.js';
 import { getTlsCredentials } from './utils/certs.js';
 
@@ -48,6 +49,7 @@ app.use('/api/issues', issuesRouter);
 app.use('/api', commentsRouter);
 app.use('/api/team', teamRouter);
 app.use('/api/backup', backupRouter);
+app.use('/api/notes', notesRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -75,6 +77,9 @@ if (fs.existsSync(clientDistPath)) {
 }
 
 const HOST = process.env.HOST || '0.0.0.0';
+// 0.0.0.0 means "listen on all interfaces" - it isn't a browsable address, so
+// print localhost instead when logging the URL to open.
+const DISPLAY_HOST = HOST === '0.0.0.0' ? 'localhost' : HOST;
 
 // Start HTTPS Server
 try {
@@ -85,11 +90,11 @@ try {
   }, app);
 
   httpsServer.listen(HTTPS_PORT, HOST, () => {
-    console.log(`[SECURITY] HyperTrack HTTPS Server listening on https://${HOST}:${HTTPS_PORT}`);
+    console.log(`[SECURITY] HyperTrack HTTPS Server listening on https://${DISPLAY_HOST}:${HTTPS_PORT}`);
   });
 } catch (err) {
   console.error('[SECURITY] Failed to start HTTPS server, falling back to HTTP:', err.message);
   app.listen(HTTPS_PORT, HOST, () => {
-    console.log(`[SERVER] Fallback HTTP Server listening on http://${HOST}:${HTTPS_PORT}`);
+    console.log(`[SERVER] Fallback HTTP Server listening on http://${DISPLAY_HOST}:${HTTPS_PORT}`);
   });
 }

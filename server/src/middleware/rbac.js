@@ -96,6 +96,15 @@ export function resolveUser(req, res, next) {
   next();
 }
 
+// Middleware to require a genuinely authenticated (non-guest) user
+export function requireAuth(req, res, next) {
+  const user = req.currentUser;
+  if (!user || user.id === 'usr_guest') {
+    return res.status(401).json({ error: 'Unauthorized: Please sign in to continue.' });
+  }
+  next();
+}
+
 // Middleware generator to enforce a specific permission
 export function requirePermission(permission) {
   return (req, res, next) => {

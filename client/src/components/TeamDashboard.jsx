@@ -11,7 +11,9 @@ import {
   Briefcase,
   AlertTriangle,
   Mail,
-  Edit2
+  Edit2,
+  Search,
+  X
 } from 'lucide-react';
 
 export default function TeamDashboard({ onOpenNewProfile }) {
@@ -19,6 +21,9 @@ export default function TeamDashboard({ onOpenNewProfile }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [roleMatrix, setRoleMatrix] = useState(null);
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [workloadFilter, setWorkloadFilter] = useState('all');
+  const [memberSearch, setMemberSearch] = useState('');
 
   const fetchTeamStats = async () => {
     try {
@@ -78,6 +83,26 @@ export default function TeamDashboard({ onOpenNewProfile }) {
 
   const { summary, members, activity } = stats;
 
+  const filteredMembers = members.filter(m => {
+    if (roleFilter !== 'all' && m.role !== roleFilter) return false;
+    if (workloadFilter === 'has_work' && m.totalActive === 0) return false;
+    if (workloadFilter === 'idle' && m.totalActive > 0) return false;
+    if (memberSearch.trim()) {
+      const q = memberSearch.trim().toLowerCase();
+      if (!m.name.toLowerCase().includes(q) && !m.email.toLowerCase().includes(q) && !(m.title || '').toLowerCase().includes(q)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const activeMemberFilterCount = (roleFilter !== 'all' ? 1 : 0) + (workloadFilter !== 'all' ? 1 : 0) + (memberSearch.trim() ? 1 : 0);
+  const clearMemberFilters = () => {
+    setRoleFilter('all');
+    setWorkloadFilter('all');
+    setMemberSearch('');
+  };
+
   const permissionsList = [
     { key: 'manage_users', label: 'Create/Manage Team Profiles' },
     { key: 'change_roles', label: 'Assign & Change Roles' },
@@ -111,6 +136,47 @@ export default function TeamDashboard({ onOpenNewProfile }) {
             <span>Create Team Profile</span>
           </button>
         )}
+      </div>
+
+      {/* Member Filter Bar */}
+      <div className="filters-group" style={{ padding: '0' }}>
+        <select className="select-input" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+          <option value="all">All Roles</option>
+          <option value="admin">Admin</option>
+          <option value="pm">Project Manager</option>
+          <option value="developer">Developer</option>
+          <option value="qa">QA</option>
+          <option value="viewer">Viewer</option>
+        </select>
+
+        <select className="select-input" value={workloadFilter} onChange={(e) => setWorkloadFilter(e.target.value)}>
+          <option value="all">Any Workload</option>
+          <option value="has_work">Has Active Work</option>
+          <option value="idle">Idle / No Active Work</option>
+        </select>
+
+        <div style={{ position: 'relative', width: '220px' }}>
+          <Search size={14} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            className="text-input"
+            placeholder="Search name, email, title..."
+            value={memberSearch}
+            onChange={(e) => setMemberSearch(e.target.value)}
+            style={{ paddingLeft: '28px', width: '100%' }}
+          />
+        </div>
+
+        {activeMemberFilterCount > 0 && (
+          <button className="btn btn-secondary" onClick={clearMemberFilters} style={{ padding: '5px 10px', fontSize: '12px' }}>
+            <X size={13} />
+            <span>Clear ({activeMemberFilterCount})</span>
+          </button>
+        )}
+
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+          {filteredMembers.length} of {members.length} members
+        </span>
       </div>
 
       <div className="team-stats-grid">
@@ -160,7 +226,11 @@ export default function TeamDashboard({ onOpenNewProfile }) {
         </div>
 
         <div className="workload-matrix-card">
-          {members.map(member => {
+          {filteredMembers.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+              No team members match the current filters.
+            </div>
+          ) : filteredMembers.map(member => {
             const total = member.workload.todo + member.workload.in_progress + member.workload.in_review + member.workload.done;
             const pct = (val) => (total > 0 ? (val / total) * 100 : 0);
 
@@ -262,7 +332,11 @@ export default function TeamDashboard({ onOpenNewProfile }) {
         </div>
 
         <div className="roster-grid">
-          {members.map(member => (
+          {filteredMembers.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', gridColumn: '1 / -1' }}>
+              No team members match the current filters.
+            </div>
+          ) : filteredMembers.map(member => (
             <div key={member.id} className="roster-card">
               <div className="roster-card-top">
                 <div style={{ display: 'flex', gap: '12px' }}>

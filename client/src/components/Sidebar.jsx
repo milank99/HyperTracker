@@ -23,7 +23,8 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  FolderKanban
+  FolderKanban,
+  StickyNote
 } from 'lucide-react';
 
 export default function Sidebar({ 
@@ -104,7 +105,10 @@ export default function Sidebar({
     }
   };
 
-  const tabs = getTabsForRole(currentUser?.role || 'viewer');
+  const tabs = [
+    ...getTabsForRole(currentUser?.role || 'viewer'),
+    { id: 'notes', label: 'My Notes', icon: StickyNote }
+  ];
 
   return (
     <>

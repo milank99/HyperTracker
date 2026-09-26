@@ -11,6 +11,7 @@ import MetricsDashboard from './components/MetricsDashboard';
 import AdminConsoleView from './components/AdminConsoleView';
 import DeveloperWorkspaceView from './components/DeveloperWorkspaceView';
 import QAVerificationView from './components/QAVerificationView';
+import NotesView from './components/NotesView';
 import IssueModal from './components/IssueModal';
 import ProfileModal from './components/ProfileModal';
 import UserProfileModal from './components/UserProfileModal';
@@ -33,7 +34,23 @@ function MainApp() {
   // Filter State
   const [typeFilter, setTypeFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [assigneeFilter, setAssigneeFilter] = useState('all');
+  const [reporterFilter, setReporterFilter] = useState('all');
+  const [dueFilter, setDueFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+
+  const clearAllFilters = () => {
+    setTypeFilter('all');
+    setPriorityFilter('all');
+    setStatusFilter('all');
+    setSeverityFilter('all');
+    setAssigneeFilter('all');
+    setReporterFilter('all');
+    setDueFilter('all');
+    setSearchTerm('');
+  };
 
   // Data State
   const [issues, setIssues] = useState([]);
@@ -85,6 +102,21 @@ function MainApp() {
       if (priorityFilter !== 'all') {
         params.append('priority', priorityFilter);
       }
+      if (statusFilter !== 'all') {
+        params.append('status', statusFilter);
+      }
+      if (severityFilter !== 'all') {
+        params.append('severity', severityFilter);
+      }
+      if (assigneeFilter !== 'all') {
+        params.append('assigneeId', assigneeFilter);
+      }
+      if (reporterFilter !== 'all') {
+        params.append('reporterId', reporterFilter);
+      }
+      if (dueFilter !== 'all') {
+        params.append('dueFilter', dueFilter);
+      }
       if (searchTerm.trim()) {
         params.append('search', searchTerm.trim());
       }
@@ -97,7 +129,7 @@ function MainApp() {
     } finally {
       setLoading(false);
     }
-  }, [selectedProjectId, typeFilter, priorityFilter, searchTerm]);
+  }, [selectedProjectId, typeFilter, priorityFilter, statusFilter, severityFilter, assigneeFilter, reporterFilter, dueFilter, searchTerm]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -190,8 +222,8 @@ function MainApp() {
     return <LoginPage />;
   }
 
-  // Determine if SubHeader should show (hide on Admin Console, Team Capacity, and Developer views where focus is key)
-  const showSubHeader = ['kanban', 'bugs', 'list', 'metrics'].includes(currentTab);
+  // Determine if the shared issue filter bar should show (all issue-based views)
+  const showSubHeader = ['kanban', 'bugs', 'list', 'metrics', 'developer', 'qa'].includes(currentTab);
 
   return (
     <div className="app-layout">
@@ -208,13 +240,24 @@ function MainApp() {
       <div className="app-main-area">
         {/* Sub Header Bar with Quick Filters */}
         {showSubHeader && (
-          <SubHeader 
+          <SubHeader
             typeFilter={typeFilter}
             setTypeFilter={setTypeFilter}
             priorityFilter={priorityFilter}
             setPriorityFilter={setPriorityFilter}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            severityFilter={severityFilter}
+            setSeverityFilter={setSeverityFilter}
+            assigneeFilter={assigneeFilter}
+            setAssigneeFilter={setAssigneeFilter}
+            reporterFilter={reporterFilter}
+            setReporterFilter={setReporterFilter}
+            dueFilter={dueFilter}
+            setDueFilter={setDueFilter}
             searchTerm={searchTerm}
             setSearchTerm={setSearchTerm}
+            onClearAll={clearAllFilters}
             totalCount={issues.length}
           />
         )}
@@ -292,10 +335,15 @@ function MainApp() {
 
             {/* 8. Metrics View */}
             {currentTab === 'metrics' && (
-              <MetricsDashboard 
+              <MetricsDashboard
                 issues={issues}
                 projects={projects}
               />
+            )}
+
+            {/* 9. Notes View */}
+            {currentTab === 'notes' && (
+              <NotesView />
             )}
           </>
         )}

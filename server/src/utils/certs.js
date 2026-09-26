@@ -19,7 +19,7 @@ export function getTlsCredentials() {
     console.log('[SECURITY] TLS certificates missing. Generating local self-signed certificates...');
     try {
       execSync(
-        `/usr/bin/openssl req -x509 -newkey rsa:2048 -keyout "${KEY_PATH}" -out "${CERT_PATH}" -days 365 -nodes -subj "/CN=localhost"`,
+        `openssl req -x509 -newkey rsa:2048 -keyout "${KEY_PATH}" -out "${CERT_PATH}" -days 365 -nodes -subj "/CN=localhost"`,
         { stdio: 'pipe' }
       );
       console.log('[SECURITY] Generated fresh TLS certificates in:', CERTS_DIR);

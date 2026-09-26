@@ -15,12 +15,22 @@ import {
   Plus,
   Trash2,
   FolderPlus,
-  X
+  X,
+  Search
 } from 'lucide-react';
 
 export default function AdminConsoleView({ onOpenNewProfile, onOpenBackup }) {
   const { users, currentUser, apiFetch, showToast, refreshUsers, projects, refreshProjects } = useAuth();
   const [resettingId, setResettingId] = useState(null);
+
+  // User table filters
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userStatusFilter, setUserStatusFilter] = useState('all');
+  const [userSearch, setUserSearch] = useState('');
+
+  // Project table filters
+  const [projectStatusFilter, setProjectStatusFilter] = useState('all');
+  const [projectSearch, setProjectSearch] = useState('');
 
   // New Project Form State
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -110,6 +120,31 @@ export default function AdminConsoleView({ onOpenNewProfile, onOpenBackup }) {
     }
   };
 
+  const filteredUsers = users.filter(u => {
+    if (userRoleFilter !== 'all' && u.role !== userRoleFilter) return false;
+    const isActive = u.is_active !== 0;
+    if (userStatusFilter === 'active' && !isActive) return false;
+    if (userStatusFilter === 'inactive' && isActive) return false;
+    if (userSearch.trim()) {
+      const q = userSearch.trim().toLowerCase();
+      if (!u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+  const activeUserFilterCount = (userRoleFilter !== 'all' ? 1 : 0) + (userStatusFilter !== 'all' ? 1 : 0) + (userSearch.trim() ? 1 : 0);
+  const clearUserFilters = () => { setUserRoleFilter('all'); setUserStatusFilter('all'); setUserSearch(''); };
+
+  const filteredProjects = projects.filter(p => {
+    if (projectStatusFilter !== 'all' && p.status !== projectStatusFilter) return false;
+    if (projectSearch.trim()) {
+      const q = projectSearch.trim().toLowerCase();
+      if (!p.name.toLowerCase().includes(q) && !p.key.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+  const activeProjectFilterCount = (projectStatusFilter !== 'all' ? 1 : 0) + (projectSearch.trim() ? 1 : 0);
+  const clearProjectFilters = () => { setProjectStatusFilter('all'); setProjectSearch(''); };
+
   const handleDeleteProject = async (project) => {
     if (!window.confirm(`Are you sure you want to delete project [${project.key}] "${project.name}"? All associated tickets will be deleted!`)) {
       return;
@@ -162,9 +197,46 @@ export default function AdminConsoleView({ onOpenNewProfile, onOpenBackup }) {
           <div style={{ fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>Team User Directory & Access Governance</span>
             <span className="badge" style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
-              {users.length} accounts
+              {filteredUsers.length} of {users.length} accounts
             </span>
           </div>
+        </div>
+
+        {/* User Filter Bar */}
+        <div className="filters-group" style={{ margin: '12px 0 4px' }}>
+          <select className="select-input" value={userRoleFilter} onChange={(e) => setUserRoleFilter(e.target.value)}>
+            <option value="all">All Roles</option>
+            <option value="admin">Admin</option>
+            <option value="pm">Manager (PM)</option>
+            <option value="developer">Developer</option>
+            <option value="qa">QA Lead</option>
+            <option value="viewer">Viewer</option>
+          </select>
+
+          <select className="select-input" value={userStatusFilter} onChange={(e) => setUserStatusFilter(e.target.value)}>
+            <option value="all">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Deactivated</option>
+          </select>
+
+          <div style={{ position: 'relative', width: '220px' }}>
+            <Search size={14} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              className="text-input"
+              placeholder="Search name or email..."
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              style={{ paddingLeft: '28px', width: '100%' }}
+            />
+          </div>
+
+          {activeUserFilterCount > 0 && (
+            <button className="btn btn-secondary" onClick={clearUserFilters} style={{ padding: '5px 10px', fontSize: '12px' }}>
+              <X size={13} />
+              <span>Clear ({activeUserFilterCount})</span>
+            </button>
+          )}
         </div>
 
         <div style={{ overflowX: 'auto' }}>
@@ -179,7 +251,13 @@ export default function AdminConsoleView({ onOpenNewProfile, onOpenBackup }) {
               </tr>
             </thead>
             <tbody>
-              {users.map(u => {
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan="5" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                    No user accounts match the current filters.
+                  </td>
+                </tr>
+              ) : filteredUsers.map(u => {
                 const isActive = u.is_active !== 0;
                 const isSelf = u.id === currentUser.id;
 
@@ -360,11 +438,11 @@ export default function AdminConsoleView({ onOpenNewProfile, onOpenBackup }) {
             <FolderKanban size={17} color="var(--primary)" />
             <span>Active Projects & Workspaces</span>
             <span className="badge" style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
-              {projects.length} {projects.length === 1 ? 'project' : 'projects'}
+              {filteredProjects.length} of {projects.length} {projects.length === 1 ? 'project' : 'projects'}
             </span>
           </div>
-          <button 
-            className="btn btn-secondary" 
+          <button
+            className="btn btn-secondary"
             style={{ padding: '5px 12px', fontSize: '12px' }}
             onClick={() => setIsCreatingProject(true)}
           >
@@ -372,6 +450,37 @@ export default function AdminConsoleView({ onOpenNewProfile, onOpenBackup }) {
             <span>Add Project</span>
           </button>
         </div>
+
+        {/* Project Filter Bar */}
+        {projects.length > 0 && (
+          <div className="filters-group" style={{ margin: '0 0 14px' }}>
+            <select className="select-input" value={projectStatusFilter} onChange={(e) => setProjectStatusFilter(e.target.value)}>
+              <option value="all">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="planning">Planning</option>
+              <option value="archived">Archived</option>
+            </select>
+
+            <div style={{ position: 'relative', width: '220px' }}>
+              <Search size={14} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="text-input"
+                placeholder="Search name or key..."
+                value={projectSearch}
+                onChange={(e) => setProjectSearch(e.target.value)}
+                style={{ paddingLeft: '28px', width: '100%' }}
+              />
+            </div>
+
+            {activeProjectFilterCount > 0 && (
+              <button className="btn btn-secondary" onClick={clearProjectFilters} style={{ padding: '5px 10px', fontSize: '12px' }}>
+                <X size={13} />
+                <span>Clear ({activeProjectFilterCount})</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {projects.length === 0 ? (
           <div style={{ 
@@ -407,7 +516,13 @@ export default function AdminConsoleView({ onOpenNewProfile, onOpenBackup }) {
                 </tr>
               </thead>
               <tbody>
-                {projects.map(p => (
+                {filteredProjects.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                      No projects match the current filters.
+                    </td>
+                  </tr>
+                ) : filteredProjects.map(p => (
                   <tr key={p.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                     <td style={{ padding: '12px 14px', fontWeight: '600', color: 'var(--primary)' }}>
                       [{p.key}]

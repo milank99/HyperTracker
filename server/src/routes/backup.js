@@ -12,6 +12,8 @@ router.get('/export', (req, res) => {
   const issues = db.prepare('SELECT * FROM issues').all();
   const comments = db.prepare('SELECT * FROM comments').all();
   const activities = db.prepare('SELECT * FROM activity_logs').all();
+  const notes = db.prepare('SELECT * FROM notes').all();
+  const noteShares = db.prepare('SELECT * FROM note_shares').all();
 
   const exportPayload = {
     version: '1.0',
@@ -21,7 +23,9 @@ router.get('/export', (req, res) => {
       projects,
       issues,
       comments,
-      activities
+      activities,
+      notes,
+      note_shares: noteShares
     }
   };
 
@@ -49,6 +53,8 @@ router.post('/import', requirePermission('backup_restore'), (req, res) => {
 
   try {
     db.exec(`
+      DELETE FROM note_shares;
+      DELETE FROM notes;
       DELETE FROM comments;
       DELETE FROM activity_logs;
       DELETE FROM issues;
@@ -56,13 +62,18 @@ router.post('/import', requirePermission('backup_restore'), (req, res) => {
       DELETE FROM users;
     `);
 
-    // Insert users
+    // Insert users (preserves password hash/salt and active status, so restored accounts can still log in)
     const insertUser = db.prepare(`
-      INSERT INTO users (id, name, email, avatar_color, title, role, bio, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, name, email, password_hash, salt, is_active, avatar_color, title, role, bio, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const u of data.users) {
-      insertUser.run(u.id, u.name, u.email, u.avatar_color, u.title, u.role, u.bio, u.created_at);
+      insertUser.run(
+        u.id, u.name, u.email,
+        u.password_hash ?? null, u.salt ?? null,
+        u.is_active !== undefined ? u.is_active : 1,
+        u.avatar_color, u.title, u.role, u.bio, u.created_at
+      );
     }
 
     // Insert projects
@@ -98,6 +109,28 @@ router.post('/import', requirePermission('backup_restore'), (req, res) => {
       `);
       for (const c of data.comments) {
         insertComment.run(c.id, c.issue_id, c.user_id, c.content, c.created_at);
+      }
+    }
+
+    // Insert notes if any
+    if (data.notes && Array.isArray(data.notes)) {
+      const insertNote = db.prepare(`
+        INSERT INTO notes (id, owner_id, title, content, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const n of data.notes) {
+        insertNote.run(n.id, n.owner_id, n.title, n.content, n.created_at, n.updated_at);
+      }
+    }
+
+    // Insert note shares if any
+    if (data.note_shares && Array.isArray(data.note_shares)) {
+      const insertNoteShare = db.prepare(`
+        INSERT INTO note_shares (id, note_id, user_id, permission, shared_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      for (const s of data.note_shares) {
+        insertNoteShare.run(s.id, s.note_id, s.user_id, s.permission, s.shared_at);
       }
     }
 

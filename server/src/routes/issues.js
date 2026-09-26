@@ -6,7 +6,7 @@ const router = Router();
 
 // GET all issues with rich filters
 router.get('/', (req, res) => {
-  const { projectId, type, status, priority, severity, assigneeId, search } = req.query;
+  const { projectId, type, status, priority, severity, assigneeId, reporterId, dueFilter, search } = req.query;
 
   let query = `
     SELECT 
@@ -48,9 +48,22 @@ router.get('/', (req, res) => {
     query += ` AND i.severity = ?`;
     params.push(severity);
   }
-  if (assigneeId) {
+  if (assigneeId === 'unassigned') {
+    query += ` AND i.assignee_id IS NULL`;
+  } else if (assigneeId) {
     query += ` AND i.assignee_id = ?`;
     params.push(assigneeId);
+  }
+  if (reporterId) {
+    query += ` AND i.reporter_id = ?`;
+    params.push(reporterId);
+  }
+  if (dueFilter === 'overdue') {
+    query += ` AND i.due_date IS NOT NULL AND date(i.due_date) < date('now') AND i.status NOT IN ('done', 'closed')`;
+  } else if (dueFilter === 'this_week') {
+    query += ` AND i.due_date IS NOT NULL AND date(i.due_date) BETWEEN date('now') AND date('now', '+7 days')`;
+  } else if (dueFilter === 'no_date') {
+    query += ` AND i.due_date IS NULL`;
   }
   if (search) {
     query += ` AND (i.title LIKE ? OR i.description LIKE ? OR i.id LIKE ?)`;

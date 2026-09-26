@@ -62,6 +62,24 @@ CREATE TABLE IF NOT EXISTS activity_logs (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    content TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS note_shares (
+    id TEXT PRIMARY KEY,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission TEXT NOT NULL DEFAULT 'view' CHECK(permission IN ('view', 'edit')),
+    shared_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(note_id, user_id)
+);
+
 -- Indices for rapid querying
 CREATE INDEX IF NOT EXISTS idx_issues_project_id ON issues(project_id);
 CREATE INDEX IF NOT EXISTS idx_issues_assignee_id ON issues(assignee_id);
@@ -69,3 +87,6 @@ CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
 CREATE INDEX IF NOT EXISTS idx_issues_type ON issues(type);
 CREATE INDEX IF NOT EXISTS idx_comments_issue_id ON comments(issue_id);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_owner_id ON notes(owner_id);
+CREATE INDEX IF NOT EXISTS idx_note_shares_note_id ON note_shares(note_id);
+CREATE INDEX IF NOT EXISTS idx_note_shares_user_id ON note_shares(user_id);
