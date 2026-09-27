@@ -37,6 +37,13 @@ try {
   if (!columnNames.includes('is_active')) {
     db.exec("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1;");
   }
+
+  const issuesTableInfo = db.prepare("PRAGMA table_info(issues)").all();
+  const issuesColumnNames = issuesTableInfo.map(c => c.name);
+  if (!issuesColumnNames.includes('archived_at')) {
+    db.exec("ALTER TABLE issues ADD COLUMN archived_at TEXT;");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_issues_archived_at ON issues(archived_at);");
 } catch (e) {
   console.warn('[DB] Migration warning:', e.message);
 }

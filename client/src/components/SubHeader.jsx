@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Search, FolderKanban, X } from 'lucide-react';
+import { Search, FolderKanban, X, BookmarkPlus, Trash2 } from 'lucide-react';
+
+const PRESETS_KEY_PREFIX = 'hypertrack_filter_presets_';
 
 export default function SubHeader({
   typeFilter,
@@ -17,16 +19,79 @@ export default function SubHeader({
   setReporterFilter,
   dueFilter,
   setDueFilter,
+  archivedFilter,
+  setArchivedFilter,
   searchTerm,
   setSearchTerm,
   onClearAll,
   totalCount
 }) {
-  const { projects, selectedProjectId, setSelectedProjectId, users } = useAuth();
+  const { projects, selectedProjectId, setSelectedProjectId, users, currentUser, showToast } = useAuth();
 
   const activeFilterCount = [
     typeFilter, priorityFilter, statusFilter, severityFilter, assigneeFilter, reporterFilter, dueFilter
-  ].filter(f => f !== 'all').length + (searchTerm.trim() ? 1 : 0);
+  ].filter(f => f !== 'all').length + (searchTerm.trim() ? 1 : 0) + (archivedFilter !== 'active' ? 1 : 0);
+
+  // Saved filter presets (per-user, stored locally in this browser)
+  const presetsKey = `${PRESETS_KEY_PREFIX}${currentUser?.id || 'guest'}`;
+  const [presets, setPresets] = useState([]);
+  const [selectedPresetName, setSelectedPresetName] = useState('');
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(presetsKey);
+      setPresets(raw ? JSON.parse(raw) : []);
+    } catch {
+      setPresets([]);
+    }
+    setSelectedPresetName('');
+  }, [presetsKey]);
+
+  const currentFilters = {
+    projectId: selectedProjectId,
+    typeFilter, priorityFilter, statusFilter, severityFilter,
+    assigneeFilter, reporterFilter, dueFilter, archivedFilter, searchTerm
+  };
+
+  const handleSavePreset = () => {
+    const name = window.prompt('Name this filter preset (e.g. "My Overdue Bugs"):');
+    if (!name || !name.trim()) return;
+
+    const next = [...presets.filter(p => p.name !== name.trim()), { name: name.trim(), filters: currentFilters }];
+    setPresets(next);
+    localStorage.setItem(presetsKey, JSON.stringify(next));
+    setSelectedPresetName(name.trim());
+    showToast(`Saved filter preset "${name.trim()}"`, 'success');
+  };
+
+  const applyPreset = useCallback((name) => {
+    const preset = presets.find(p => p.name === name);
+    if (!preset) return;
+    const f = preset.filters;
+    if (f.projectId !== undefined) setSelectedProjectId(f.projectId);
+    setTypeFilter(f.typeFilter ?? 'all');
+    setPriorityFilter(f.priorityFilter ?? 'all');
+    setStatusFilter(f.statusFilter ?? 'all');
+    setSeverityFilter(f.severityFilter ?? 'all');
+    setAssigneeFilter(f.assigneeFilter ?? 'all');
+    setReporterFilter(f.reporterFilter ?? 'all');
+    setDueFilter(f.dueFilter ?? 'all');
+    setArchivedFilter(f.archivedFilter ?? 'active');
+    setSearchTerm(f.searchTerm ?? '');
+  }, [presets, setSelectedProjectId, setTypeFilter, setPriorityFilter, setStatusFilter, setSeverityFilter, setAssigneeFilter, setReporterFilter, setDueFilter, setArchivedFilter, setSearchTerm]);
+
+  const handleSelectPreset = (name) => {
+    setSelectedPresetName(name);
+    if (name) applyPreset(name);
+  };
+
+  const handleDeletePreset = () => {
+    if (!selectedPresetName) return;
+    const next = presets.filter(p => p.name !== selectedPresetName);
+    setPresets(next);
+    localStorage.setItem(presetsKey, JSON.stringify(next));
+    setSelectedPresetName('');
+  };
 
   return (
     <div className="sub-header">
@@ -139,6 +204,52 @@ export default function SubHeader({
           <option value="this_week">Due This Week</option>
           <option value="no_date">No Due Date</option>
         </select>
+
+        {/* Archived Filter */}
+        <select
+          className="select-input"
+          value={archivedFilter}
+          onChange={(e) => setArchivedFilter(e.target.value)}
+        >
+          <option value="active">Active Only</option>
+          <option value="only">Archived Only</option>
+          <option value="all">Active + Archived</option>
+        </select>
+
+        {/* Saved Filter Presets */}
+        {presets.length > 0 && (
+          <select
+            className="select-input"
+            value={selectedPresetName}
+            onChange={(e) => handleSelectPreset(e.target.value)}
+            title="Load a saved filter preset"
+          >
+            <option value="">Load Preset...</option>
+            {presets.map(p => (
+              <option key={p.name} value={p.name}>{p.name}</option>
+            ))}
+          </select>
+        )}
+
+        {selectedPresetName && (
+          <button
+            className="btn-icon-sm"
+            onClick={handleDeletePreset}
+            title={`Delete preset "${selectedPresetName}"`}
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+
+        <button
+          className="btn btn-secondary"
+          onClick={handleSavePreset}
+          style={{ padding: '5px 10px', fontSize: '12px' }}
+          title="Save the current filters as a reusable preset"
+        >
+          <BookmarkPlus size={13} />
+          <span>Save Preset</span>
+        </button>
 
         {/* Clear Filters */}
         {activeFilterCount > 0 && (

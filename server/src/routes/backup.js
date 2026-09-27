@@ -90,14 +90,14 @@ router.post('/import', requirePermission('backup_restore'), (req, res) => {
       INSERT INTO issues (
         id, project_id, type, title, description, status, priority, severity,
         reproduction_steps, expected_behavior, actual_behavior, environment,
-        assignee_id, reporter_id, due_date, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        assignee_id, reporter_id, due_date, archived_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const i of data.issues) {
       insertIssue.run(
         i.id, i.project_id, i.type, i.title, i.description, i.status, i.priority, i.severity,
         i.reproduction_steps, i.expected_behavior, i.actual_behavior, i.environment,
-        i.assignee_id, i.reporter_id, i.due_date, i.created_at, i.updated_at
+        i.assignee_id, i.reporter_id, i.due_date, i.archived_at ?? null, i.created_at, i.updated_at
       );
     }
 

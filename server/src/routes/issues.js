@@ -4,9 +4,116 @@ import { requirePermission, hasPermission } from '../middleware/rbac.js';
 
 const router = Router();
 
+const VALID_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'closed'];
+const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+
+// Registered before '/:id' so literal "/bulk..." paths aren't swallowed as an issue id.
+
+// BULK UPDATE status / priority / assignee across multiple tickets at once
+router.patch('/bulk', requirePermission('edit_issue'), (req, res) => {
+  const { ids, status, priority, assigneeId } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Provide a non-empty array of ticket ids.' });
+  }
+  if (status !== undefined && !VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `Invalid status: ${status}` });
+  }
+  if (priority !== undefined && !VALID_PRIORITIES.includes(priority)) {
+    return res.status(400).json({ error: `Invalid priority: ${priority}` });
+  }
+  if (status === undefined && priority === undefined && assigneeId === undefined) {
+    return res.status(400).json({ error: 'Provide at least one field to update (status, priority, or assigneeId).' });
+  }
+
+  let updatedCount = 0;
+  for (const id of ids) {
+    const existing = db.prepare('SELECT * FROM issues WHERE id = ?').get(id);
+    if (!existing) continue;
+
+    const nextStatus = status !== undefined ? status : existing.status;
+    const nextPriority = priority !== undefined ? priority : existing.priority;
+    const nextAssignee = assigneeId !== undefined ? (assigneeId || null) : existing.assignee_id;
+
+    db.prepare(`
+      UPDATE issues
+      SET status = ?, priority = ?, assignee_id = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(nextStatus, nextPriority, nextAssignee, id);
+
+    const changes = [];
+    if (status !== undefined && status !== existing.status) changes.push(`status to ${status}`);
+    if (priority !== undefined && priority !== existing.priority) changes.push(`priority to ${priority}`);
+    if (assigneeId !== undefined && (assigneeId || null) !== existing.assignee_id) changes.push('assignee');
+    if (changes.length > 0) {
+      db.prepare(`
+        INSERT INTO activity_logs (id, entity_type, entity_id, user_id, action, details)
+        VALUES (?, 'issue', ?, ?, 'bulk_updated', ?)
+      `).run(`act_${Date.now()}_${updatedCount}`, id, req.currentUser.id, `Bulk updated: ${changes.join(', ')}`);
+    }
+    updatedCount++;
+  }
+
+  res.json({ message: `${updatedCount} ticket(s) updated.`, updatedCount });
+});
+
+// BULK ARCHIVE / UNARCHIVE
+router.patch('/bulk/archive', requirePermission('delete_issue'), (req, res) => {
+  const { ids, archived } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Provide a non-empty array of ticket ids.' });
+  }
+
+  let updatedCount = 0;
+  for (const id of ids) {
+    const existing = db.prepare('SELECT id, archived_at FROM issues WHERE id = ?').get(id);
+    if (!existing) continue;
+
+    const alreadyArchived = !!existing.archived_at;
+    if (archived && alreadyArchived) continue;
+    if (!archived && !alreadyArchived) continue;
+
+    if (archived) {
+      db.prepare(`UPDATE issues SET archived_at = datetime('now') WHERE id = ?`).run(id);
+    } else {
+      db.prepare(`UPDATE issues SET archived_at = NULL WHERE id = ?`).run(id);
+    }
+
+    db.prepare(`
+      INSERT INTO activity_logs (id, entity_type, entity_id, user_id, action, details)
+      VALUES (?, 'issue', ?, ?, ?, ?)
+    `).run(
+      `act_${Date.now()}_${updatedCount}`, id, req.currentUser.id,
+      archived ? 'archived' : 'unarchived',
+      archived ? `Archived ${id} (bulk)` : `Unarchived ${id} (bulk)`
+    );
+    updatedCount++;
+  }
+
+  res.json({ message: `${updatedCount} ticket(s) ${archived ? 'archived' : 'unarchived'}.`, updatedCount });
+});
+
+// BULK DELETE
+router.delete('/bulk', requirePermission('delete_issue'), (req, res) => {
+  const { ids } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Provide a non-empty array of ticket ids.' });
+  }
+
+  let deletedCount = 0;
+  for (const id of ids) {
+    const result = db.prepare('DELETE FROM issues WHERE id = ?').run(id);
+    if (result.changes > 0) deletedCount++;
+  }
+
+  res.json({ message: `${deletedCount} ticket(s) deleted.`, deletedCount });
+});
+
 // GET all issues with rich filters
 router.get('/', (req, res) => {
-  const { projectId, type, status, priority, severity, assigneeId, reporterId, dueFilter, search } = req.query;
+  const { projectId, type, status, priority, severity, assigneeId, reporterId, dueFilter, search, archived } = req.query;
 
   let query = `
     SELECT 
@@ -71,7 +178,14 @@ router.get('/', (req, res) => {
     params.push(term, term, term);
   }
 
-  query += ` ORDER BY 
+  // Archived tickets are hidden by default so they don't clutter active workflows.
+  if (archived === 'only') {
+    query += ` AND i.archived_at IS NOT NULL`;
+  } else if (archived !== 'all') {
+    query += ` AND i.archived_at IS NULL`;
+  }
+
+  query += ` ORDER BY
     CASE i.priority
       WHEN 'urgent' THEN 1
       WHEN 'high' THEN 2
@@ -110,7 +224,7 @@ router.get('/:id', (req, res) => {
   }
 
   const comments = db.prepare(`
-    SELECT 
+    SELECT
       c.*,
       u.name as author_name,
       u.avatar_color as author_avatar,
@@ -121,7 +235,18 @@ router.get('/:id', (req, res) => {
     ORDER BY c.created_at ASC
   `).all(req.params.id);
 
-  res.json({ ...issue, comments });
+  const activity = db.prepare(`
+    SELECT
+      a.*,
+      u.name as user_name,
+      u.avatar_color as user_avatar
+    FROM activity_logs a
+    LEFT JOIN users u ON a.user_id = u.id
+    WHERE a.entity_type = 'issue' AND a.entity_id = ?
+    ORDER BY a.created_at DESC
+  `).all(req.params.id);
+
+  res.json({ ...issue, comments, activity });
 });
 
 // CREATE new issue or bug
@@ -229,24 +354,37 @@ router.post('/', (req, res) => {
 // UPDATE issue
 router.put('/:id', requirePermission('edit_issue'), (req, res) => {
   const { id } = req.params;
+  // node:sqlite rejects `undefined` bind parameters (unlike some other SQLite drivers),
+  // so default every optional field to null - COALESCE below then leaves it unchanged.
   const {
-    title,
-    description,
-    status,
-    priority,
-    severity,
-    reproduction_steps,
-    expected_behavior,
-    actual_behavior,
-    environment,
+    title = null,
+    description = null,
+    status = null,
+    priority = null,
+    severity = null,
+    reproduction_steps = null,
+    expected_behavior = null,
+    actual_behavior = null,
+    environment = null,
     assignee_id,
-    due_date
+    due_date = null
   } = req.body;
 
   const existing = db.prepare('SELECT * FROM issues WHERE id = ?').get(id);
   if (!existing) {
     return res.status(404).json({ error: 'Issue not found' });
   }
+
+  // Track which fields actually changed, for a human-readable activity log entry
+  const resolvedAssigneeId = assignee_id !== undefined ? assignee_id : existing.assignee_id;
+  const fieldChanges = [];
+  if (title !== undefined && title !== null && title !== existing.title) fieldChanges.push('title');
+  if (status !== undefined && status !== null && status !== existing.status) fieldChanges.push('status');
+  if (priority !== undefined && priority !== null && priority !== existing.priority) fieldChanges.push('priority');
+  if (severity !== undefined && severity !== null && severity !== existing.severity) fieldChanges.push('severity');
+  if (resolvedAssigneeId !== existing.assignee_id) fieldChanges.push('assignee');
+  if (due_date !== undefined && due_date !== null && due_date !== existing.due_date) fieldChanges.push('due date');
+  if (description !== undefined && description !== null && description !== existing.description) fieldChanges.push('description');
 
   db.prepare(`
     UPDATE issues
@@ -273,10 +411,17 @@ router.put('/:id', requirePermission('edit_issue'), (req, res) => {
     expected_behavior,
     actual_behavior,
     environment,
-    assignee_id !== undefined ? assignee_id : existing.assignee_id,
+    resolvedAssigneeId,
     due_date,
     id
   );
+
+  if (fieldChanges.length > 0) {
+    db.prepare(`
+      INSERT INTO activity_logs (id, entity_type, entity_id, user_id, action, details)
+      VALUES (?, 'issue', ?, ?, 'updated', ?)
+    `).run(`act_${Date.now()}`, id, req.currentUser.id, `Updated ${fieldChanges.join(', ')}`);
+  }
 
   const updated = db.prepare('SELECT * FROM issues WHERE id = ?').get(id);
   res.json(updated);
@@ -315,6 +460,50 @@ router.patch('/:id/status', requirePermission('move_issue'), (req, res) => {
   );
 
   res.json({ id, status, previousStatus: existing.status });
+});
+
+// ARCHIVE issue (soft-hide from active workflows without deleting it)
+router.patch('/:id/archive', requirePermission('delete_issue'), (req, res) => {
+  const { id } = req.params;
+  const existing = db.prepare('SELECT * FROM issues WHERE id = ?').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Issue not found' });
+  }
+  if (existing.archived_at) {
+    return res.status(400).json({ error: 'Issue is already archived.' });
+  }
+
+  db.prepare(`UPDATE issues SET archived_at = datetime('now') WHERE id = ?`).run(id);
+
+  db.prepare(`
+    INSERT INTO activity_logs (id, entity_type, entity_id, user_id, action, details)
+    VALUES (?, 'issue', ?, ?, 'archived', ?)
+  `).run(`act_${Date.now()}`, id, req.currentUser.id, `Archived ${id}`);
+
+  const updated = db.prepare('SELECT * FROM issues WHERE id = ?').get(id);
+  res.json(updated);
+});
+
+// UNARCHIVE issue (restore back into active workflows)
+router.patch('/:id/unarchive', requirePermission('delete_issue'), (req, res) => {
+  const { id } = req.params;
+  const existing = db.prepare('SELECT * FROM issues WHERE id = ?').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Issue not found' });
+  }
+  if (!existing.archived_at) {
+    return res.status(400).json({ error: 'Issue is not archived.' });
+  }
+
+  db.prepare(`UPDATE issues SET archived_at = NULL WHERE id = ?`).run(id);
+
+  db.prepare(`
+    INSERT INTO activity_logs (id, entity_type, entity_id, user_id, action, details)
+    VALUES (?, 'issue', ?, ?, 'unarchived', ?)
+  `).run(`act_${Date.now()}`, id, req.currentUser.id, `Unarchived ${id}`);
+
+  const updated = db.prepare('SELECT * FROM issues WHERE id = ?').get(id);
+  res.json(updated);
 });
 
 // DELETE issue

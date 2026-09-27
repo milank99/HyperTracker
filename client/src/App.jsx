@@ -39,6 +39,7 @@ function MainApp() {
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [reporterFilter, setReporterFilter] = useState('all');
   const [dueFilter, setDueFilter] = useState('all');
+  const [archivedFilter, setArchivedFilter] = useState('active');
   const [searchTerm, setSearchTerm] = useState('');
 
   const clearAllFilters = () => {
@@ -49,6 +50,7 @@ function MainApp() {
     setAssigneeFilter('all');
     setReporterFilter('all');
     setDueFilter('all');
+    setArchivedFilter('active');
     setSearchTerm('');
   };
 
@@ -117,6 +119,9 @@ function MainApp() {
       if (dueFilter !== 'all') {
         params.append('dueFilter', dueFilter);
       }
+      if (archivedFilter !== 'active') {
+        params.append('archived', archivedFilter);
+      }
       if (searchTerm.trim()) {
         params.append('search', searchTerm.trim());
       }
@@ -129,7 +134,7 @@ function MainApp() {
     } finally {
       setLoading(false);
     }
-  }, [selectedProjectId, typeFilter, priorityFilter, statusFilter, severityFilter, assigneeFilter, reporterFilter, dueFilter, searchTerm]);
+  }, [selectedProjectId, typeFilter, priorityFilter, statusFilter, severityFilter, assigneeFilter, reporterFilter, dueFilter, archivedFilter, searchTerm]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -186,6 +191,75 @@ function MainApp() {
       showToast(`Deleted ticket ${issueId}`, 'success');
       setIsIssueModalOpen(false);
       setSelectedIssue(null);
+      loadIssues();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Archive issue (soft-hide from active workflows without deleting it)
+  const handleArchiveIssue = async (issueId) => {
+    try {
+      await apiFetch(`/api/issues/${issueId}/archive`, { method: 'PATCH' });
+      showToast(`Archived ticket [${issueId}]`, 'success');
+      setIsIssueModalOpen(false);
+      setSelectedIssue(null);
+      loadIssues();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Unarchive issue (restore back into active workflows)
+  const handleUnarchiveIssue = async (issueId) => {
+    try {
+      await apiFetch(`/api/issues/${issueId}/unarchive`, { method: 'PATCH' });
+      showToast(`Restored ticket [${issueId}] from the archive`, 'success');
+      setIsIssueModalOpen(false);
+      setSelectedIssue(null);
+      loadIssues();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Bulk update status/priority/assignee across multiple selected tickets
+  const handleBulkUpdate = async (ids, updates) => {
+    try {
+      const res = await apiFetch('/api/issues/bulk', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids, ...updates })
+      });
+      showToast(res.message, 'success');
+      loadIssues();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Bulk archive/unarchive
+  const handleBulkArchive = async (ids, archived) => {
+    try {
+      const res = await apiFetch('/api/issues/bulk/archive', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids, archived })
+      });
+      showToast(res.message, 'success');
+      loadIssues();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Bulk delete
+  const handleBulkDelete = async (ids) => {
+    if (!window.confirm(`Permanently delete ${ids.length} ticket(s)? This cannot be undone.`)) return;
+    try {
+      const res = await apiFetch('/api/issues/bulk', {
+        method: 'DELETE',
+        body: JSON.stringify({ ids })
+      });
+      showToast(res.message, 'success');
       loadIssues();
     } catch (err) {
       showToast(err.message, 'error');
@@ -255,6 +329,8 @@ function MainApp() {
             setReporterFilter={setReporterFilter}
             dueFilter={dueFilter}
             setDueFilter={setDueFilter}
+            archivedFilter={archivedFilter}
+            setArchivedFilter={setArchivedFilter}
             searchTerm={searchTerm}
             setSearchTerm={setSearchTerm}
             onClearAll={clearAllFilters}
@@ -327,9 +403,12 @@ function MainApp() {
 
             {/* 7. List Tabular View */}
             {currentTab === 'list' && (
-              <ListView 
+              <ListView
                 issues={issues}
                 onSelectIssue={handleSelectIssue}
+                onBulkUpdate={handleBulkUpdate}
+                onBulkArchive={handleBulkArchive}
+                onBulkDelete={handleBulkDelete}
               />
             )}
 
@@ -360,6 +439,8 @@ function MainApp() {
         }}
         onSave={handleSaveIssue}
         onDelete={handleDeleteIssue}
+        onArchive={handleArchiveIssue}
+        onUnarchive={handleUnarchiveIssue}
         initialType={initialIssueType}
         initialStatus={initialIssueStatus}
       />

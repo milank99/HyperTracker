@@ -1,25 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { 
-  X, 
-  Trash2, 
-  MessageSquare, 
-  Send, 
-  AlertCircle, 
-  Bug, 
-  CheckCircle2, 
+import {
+  X,
+  Trash2,
+  MessageSquare,
+  Send,
+  AlertCircle,
+  Bug,
+  CheckCircle2,
   Terminal,
-  Monitor
+  Monitor,
+  Archive,
+  ArchiveRestore,
+  History
 } from 'lucide-react';
 
-export default function IssueModal({ 
-  issue, 
-  isOpen, 
-  onClose, 
-  onSave, 
-  onDelete, 
+export default function IssueModal({
+  issue,
+  isOpen,
+  onClose,
+  onSave,
+  onDelete,
+  onArchive,
+  onUnarchive,
   initialType = 'task',
-  initialStatus = 'backlog' 
+  initialStatus = 'backlog'
 }) {
   const { users, projects, currentUser, can, apiFetch, showToast } = useAuth();
   const isEditing = !!issue;
@@ -44,6 +49,10 @@ export default function IssueModal({
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
 
+  // Activity History State
+  const [activity, setActivity] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+
   useEffect(() => {
     if (issue) {
       setProjectId(issue.project_id);
@@ -65,6 +74,7 @@ export default function IssueModal({
         .then(res => res.json())
         .then(data => {
           if (data.comments) setComments(data.comments);
+          if (data.activity) setActivity(data.activity);
         })
         .catch(err => console.error('Failed to fetch comments:', err));
     } else {
@@ -82,6 +92,7 @@ export default function IssueModal({
       setAssigneeId('');
       setDueDate('');
       setComments([]);
+      setActivity([]);
     }
   }, [issue, isOpen, projects, initialType, initialStatus]);
 
@@ -149,6 +160,12 @@ export default function IssueModal({
             {isEditing && (
               <span className={`badge badge-${type}`}>
                 {type}
+              </span>
+            )}
+            {isEditing && issue.archived_at && (
+              <span className="badge" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <Archive size={11} />
+                Archived
               </span>
             )}
           </div>
@@ -350,10 +367,41 @@ export default function IssueModal({
             {/* Comments Thread (Editing mode only) */}
             {isEditing && (
               <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-                <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <MessageSquare size={16} color="var(--primary)" />
-                  <span>Discussion & Activity ({comments.length})</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <div style={{ fontWeight: '700', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <MessageSquare size={16} color="var(--primary)" />
+                    <span>Discussion ({comments.length})</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '4px 10px', fontSize: '11.5px' }}
+                    onClick={() => setShowHistory(!showHistory)}
+                  >
+                    <History size={13} />
+                    <span>{showHistory ? 'Hide' : 'Show'} History ({activity.length})</span>
+                  </button>
                 </div>
+
+                {showHistory && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px', maxHeight: '200px', overflowY: 'auto', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '10px 12px' }}>
+                    {activity.length === 0 ? (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No history recorded yet.</div>
+                    ) : (
+                      activity.map(a => (
+                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                          <span>
+                            <strong style={{ color: 'var(--text-primary)' }}>{a.user_name || 'System'}</strong>{' '}
+                            {a.details || a.action}
+                          </span>
+                          <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: '10px' }}>
+                            {new Date(a.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
                   {comments.length === 0 ? (
@@ -428,15 +476,38 @@ export default function IssueModal({
           {/* Footer Actions */}
           <div className="modal-footer">
             {isEditing && can('delete_issue') && (
-              <button 
-                type="button" 
-                className="btn btn-danger" 
-                style={{ marginRight: 'auto' }}
-                onClick={() => onDelete(issue.id)}
-              >
-                <Trash2 size={15} />
-                <span>Delete</span>
-              </button>
+              <div style={{ display: 'flex', gap: '8px', marginRight: 'auto' }}>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={() => onDelete(issue.id)}
+                >
+                  <Trash2 size={15} />
+                  <span>Delete</span>
+                </button>
+
+                {issue.archived_at ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => onUnarchive(issue.id)}
+                    title="Restore this ticket back into active workflows"
+                  >
+                    <ArchiveRestore size={15} />
+                    <span>Unarchive</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => onArchive(issue.id)}
+                    title="Hide this ticket from active boards without deleting it"
+                  >
+                    <Archive size={15} />
+                    <span>Archive</span>
+                  </button>
+                )}
+              </div>
             )}
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel

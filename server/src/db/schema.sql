@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS issues (
     assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
     reporter_id TEXT REFERENCES users(id) ON DELETE SET NULL,
     due_date TEXT,
+    archived_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
